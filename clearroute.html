@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kanpur Metro System</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+body{margin:0;font-family:Segoe UI;background:#f1f5f9}
+header{padding:15px;text-align:center;background:#fff;font-size:22px;font-weight:bold;border-bottom:1px solid #ddd}
+.container{display:flex;height:calc(100vh - 60px)}
+#map{flex:2}
+.sidebar{flex:1;background:#fff;padding:15px;overflow:auto;border-left:1px solid #ddd}
+.card{background:#f8fafc;padding:12px;border-radius:10px;margin-bottom:12px;border:1px solid #ddd}
+.station{padding:6px;border-bottom:1px solid #ddd;font-size:14px}
+select,button{width:100%;padding:8px;margin-top:6px}
+button{background:#2563eb;color:#fff;border:none;border-radius:5px}
+</style>
+</head>
+
+<body>
+<header>🚇 Kanpur Metro Live System</header>
+
+<div class="container">
+<div id="map"></div>
+
+<div class="sidebar">
+
+<div class="card">
+<h3>Route Finder + Fare + ETA</h3>
+<select id="from"></select>
+<select id="to"></select>
+<button onclick="calculateRoute()">Calculate</button>
+<p id="output"></p>
+</div>
+
+<div class="card">
+<h3>📍 Live Arrival Board</h3>
+<div id="arrivalBoard"></div>
+</div>
+
+</div>
+</div>
+
+<script>
+// 🌍 MAP
+const map=L.map('map').setView([26.49,80.28],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// 🚇 SVG TRAIN
+const trainSVG=(angle=0)=>`
+<svg width="40" height="40" viewBox="0 0 64 64"
+style="transform:rotate(${angle}deg);transform-origin:center;">
+<rect x="12" y="8" width="40" height="32" rx="8" fill="#2563eb"/>
+<rect x="18" y="14" width="10" height="10" rx="2" fill="white"/>
+<rect x="36" y="14" width="10" height="10" rx="2" fill="white"/>
+<circle cx="22" cy="44" r="4"/><circle cx="42" cy="44" r="4"/>
+</svg>`;
+
+// 🚉 STATION
+const stationSVG=`
+<svg width="20" height="20">
+<circle cx="10" cy="10" r="6" fill="#ef4444" stroke="white" stroke-width="3"/>
+</svg>`;
+
+function svgIcon(svg,size){
+  return L.divIcon({html:svg,className:"",iconSize:size});
+}
+
+// ROUTE
+const route=[
+[26.508995,80.248660],[26.5038102,80.2525090],[26.499032,80.259142],[26.496409,80.268144],
+[26.4915810,80.2846651],[26.4870553,80.2921328],[26.483301,80.299691],[26.4792874,80.3115195],
+[26.4789381,80.3179352],[26.4770634,80.3371604],[26.4740633,80.3455341],[26.4726778,80.3524179],
+[26.4641184,80.3596337],[26.454534,80.351573]
+];
+
+const stations=[
+"IIT Kanpur","Kalyanpur","SPM Hospital","Vishwavidyalaya",
+"Gurudev Chauraha","Geeta Nagar","Rawatpur","LLR Hospital",
+"Moti Jheel","Chunniganj","Naveen Market","Bada Chauraha",
+"Nayaganj","Kanpur Central"
+];
+
+// DRAW
+L.polyline(route,{color:'#2563eb',weight:5}).addTo(map);
+
+route.forEach((c,i)=>{
+  L.marker(c,{icon:svgIcon(stationSVG,[20,20])})
+  .addTo(map).bindPopup(stations[i]);
+});
+
+// DROPDOWN
+const from=document.getElementById('from');
+const to=document.getElementById('to');
+stations.forEach((s,i)=>{
+  from.innerHTML+=`<option value="${i}">${s}</option>`;
+  to.innerHTML+=`<option value="${i}">${s}</option>`;
+});
+
+// DISTANCE
+function getDistance(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+
+  Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ROUTE CALC
+let currentLine=null;
+function calculateRoute(){
+  const f=parseInt(from.value);
+  const t=parseInt(to.value);
+
+  let dist=0;
+  for(let i=Math.min(f,t);i<Math.max(f,t);i++){
+    dist+=getDistance(...route[i],...route[i+1]);
+  }
+
+  let fare=10;
+  if(dist>3) fare=15;
+  if(dist>6) fare=20;
+  if(dist>9) fare=30;
+  if(dist>12) fare=40;
+  if(dist>15) fare=50;
+
+  const time=(dist/35)*60;
+
+  document.getElementById('output').innerText=
+  `Distance: ${dist.toFixed(2)} km
+Fare: ₹${fare}
+ETA: ${time.toFixed(1)} min`;
+
+  if(currentLine) map.removeLayer(currentLine);
+  currentLine=L.polyline(route.slice(Math.min(f,t),Math.max(f,t)+1),
+  {color:'orange',weight:6}).addTo(map);
+}
+
+// ANGLE
+function angle(p1,p2){
+  return Math.atan2(p2[0]-p1[0],p2[1]-p1[1])*(180/Math.PI);
+}
+
+// 🚆 4 TRAINS
+const trains=[
+{pos:0,dir:1,wait:0},
+{pos:4,dir:1,wait:0},
+{pos:route.length-1,dir:-1,wait:0},
+{pos:9,dir:-1,wait:0}
+];
+
+const markers=trains.map(t=>
+L.marker(route[Math.floor(t.pos)],{
+icon:svgIcon(trainSVG(),[40,40])
+}).addTo(map)
+);
+
+// ARRIVAL BOARD
+const board=document.getElementById("arrivalBoard");
+
+// ANIMATION LOOP
+setInterval(()=>{
+
+  trains.forEach((t,i)=>{
+
+    if(t.wait>0){t.wait--;return;}
+
+    t.pos+=0.12*t.dir;
+
+    let idx=Math.floor(t.pos);
+    let next=idx+t.dir;
+
+    if(next>=route.length||next<0){
+      t.dir*=-1;
+      t.wait=15;
+      return;
+    }
+
+    const p1=route[idx];
+    const p2=route[next];
+
+    const f=t.pos-idx;
+    const lat=p1[0]+(p2[0]-p1[0])*f;
+    const lng=p1[1]+(p2[1]-p1[1])*f;
+
+    const ang=angle(p1,p2);
+
+    markers[i].setLatLng([lat,lng]);
+    markers[i].setIcon(svgIcon(trainSVG(ang),[40,40]));
+
+    if(Math.abs(t.pos-idx)<0.03) t.wait=15;
+
+  });
+
+  // ✅ REAL ETA SYSTEM
+  let html="";
+
+  stations.forEach((s,si)=>{
+    let best=Infinity;
+
+    trains.forEach(t=>{
+
+      let dist=si - t.pos;
+
+      // ignore wrong direction
+      if((dist>0 && t.dir==-1)||(dist<0 && t.dir==1)) return;
+
+      dist=Math.abs(dist);
+
+      const speed=0.12;
+
+      let travel=dist/speed;
+      let stops=Math.floor(dist);
+      let halt=stops*15;
+      let wait=t.wait||0;
+
+      let total=travel+halt+wait;
+
+      if(total<best) best=total;
+    });
+
+    html+= best===Infinity
+    ? `<div class="station">${s} → No train</div>`
+    : `<div class="station">${s} → ${(best/60).toFixed(1)} min</div>`;
+  });
+
+  board.innerHTML=html;
+
+},1000);
+
+</script>
+</body>
+</html>
+
+</script>
+</body>
+</html>
